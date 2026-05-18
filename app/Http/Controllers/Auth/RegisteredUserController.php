@@ -14,8 +14,11 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
+use App\Repositories\Contracts\UserRepositoryInterface;
+
 class RegisteredUserController extends Controller
 {
+    public function __construct(protected UserRepositoryInterface $userRepository) {}
     /**
      * Display the registration view.
      */
@@ -37,7 +40,7 @@ class RegisteredUserController extends Controller
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
 
-        $user = User::create([
+        $user = $this->userRepository->create([
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),

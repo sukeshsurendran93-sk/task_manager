@@ -2,39 +2,97 @@
 
 namespace App\Repositories\Eloquent;
 
+use App\Enums\TaskStatus;
 use App\Models\Task;
 use App\Repositories\Contracts\TaskRepositoryInterface;
-use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 
 class TaskRepository implements TaskRepositoryInterface
 {
-    public function all(array $filters = [])
+    public function all(array $filters = []): LengthAwarePaginator
     {
-        return Task::query()->with('user')->filter($filters)->paginate(10);
+        return Task::query()
+            ->with(['assignee', 'createdBy'])
+            ->filter($filters)
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
     }
 
-    public function find(int $id)
+    public function find(int $id): ?Task
     {
-        return Task::with(['user', 'createdBy'])->find($id);
+        return Task::with(['assignee', 'createdBy'])->find($id);
     }
 
-    public function create(array $data) 
+    public function create(array $data): Task
     {
         return Task::create($data);
     }
 
-    public function update(array $data, int $id)
+    public function update(int $id, array $data): Task
     {
-        return Task::find($id)->update($data);
+        $task = Task::findOrFail($id);
+        $task->update($data);
+
+        return $task->fresh(['assignee', 'createdBy']);
     }
 
-    public function delete(int $id)
+    public function delete(int $id): bool
     {
-        return Task::destroy($id);
+        return (bool) Task::destroy($id);
     }
 
-    public function updateAi(int $id, array $data)
+    public function updateAi(int $id, array $data): Task
     {
-        return Task::find($id)->update($data);
+        $task = Task::findOrFail($id);
+        $task->update([
+            'ai_summary' => $data['ai_summary'] ?? $task->ai_summary,
+            'ai_priority' => $data['ai_priority'] ?? $task->ai_priority,
+        ]);
+
+        return $task->fresh(['assignee', 'createdBy']);
+    }
+
+    public function analytics(array $filters = []): array
+    {
+        $base = Task::query()->filter($filters);
+
+        $total = (clone $base)->count();
+        $completed = (clone $base)->where('status', TaskStatus::Completed)->count();
+        $pending = (clone $base)->where('status', TaskStatus::Pending)->count();
+        $inProgress = (clone $base)->where('status', TaskStatus::InProgress)->count();
+        $highPriority = (clone $base)->where('priority', 'high')->count();
+
+        return [
+            'total' => $total,
+            'completed' => $completed,
+            'pending' => $pending,
+            'in_progress' => $inProgress,
+            'high_priority' => $highPriority,
+            'completed_percentage' => $total > 0 ? (int) round(($completed / $total) * 100) : 0,
+            'in_progress_percentage' => $total > 0 ? (int) round(($inProgress / $total) * 100) : 0,
+            'total_percentage' => $total > 0 ? 100 : 0,
+        ];
+    }
+
+    public function monthlyCompletion(array $filters = []): array
+    {
+        return collect(range(4, 0))
+            ->map(fn (int $i) => Carbon::now()->subMonths($i)->startOfMonth())
+            ->map(function (Carbon $month) use ($filters) {
+                $count = Task::query()
+                    ->filter($filters)
+                    ->where('status', TaskStatus::Completed)
+                    ->whereBetween('updated_at', [$month, $month->copy()->endOfMonth()])
+                    ->count();
+
+                return [
+                    'label' => $month->format('M'),
+                    'count' => $count,
+                ];
+            })
+            ->values()
+            ->all();
     }
 }
