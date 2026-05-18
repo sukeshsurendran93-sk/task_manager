@@ -128,4 +128,4 @@ php artisan test
 
 ## Screenshots
 
-Add screenshots of the three UI screens to `/docs/screenshots/` for submission.
+Screenshots of the three UI screens are in `/docs/screenshots/`.
